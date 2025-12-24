@@ -1,0 +1,42 @@
+{
+  "name": "create-builtby-app",
+  "version": "1.0.0",
+  "description": "Generate apps from builtby.win templates",
+  "type": "module",
+  "bin": {
+    "create-builtby-app": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "prompts": "^2.4.2",
+    "tiged": "^2.12.7",
+    "picocolors": "^1.1.1",
+    "replace-in-file": "^8.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/prompts": "^2.4.9",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "keywords": [
+    "cli",
+    "boilerplate",
+    "tauri",
+    "astro",
+    "template"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/builtby-win/generate-app-cli"
+  }
+}
