@@ -145,12 +145,6 @@ const webTemplate: Template = {
       message: 'Domain name (e.g., "example.com")',
       validate: (v) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(v) || 'Must be a valid domain',
     },
-    {
-      type: 'text',
-      name: 'polarOrganizationId',
-      message: 'Polar.sh organization ID (optional)',
-      initial: 'org_placeholder',
-    },
   ],
   transform: (projectDir, answers) => {
     const files = [
@@ -182,7 +176,6 @@ const webTemplate: Template = {
       { from: 'api.myapp.example.com', to: `api.${answers.domain}` },
       { from: 'https://myapp.example.com', to: `https://${answers.domain}` },
       { from: 'https://api.myapp.example.com', to: `https://api.${answers.domain}` },
-      { from: 'org_placeholder', to: answers.polarOrganizationId || 'org_placeholder' },
       { from: 'hello@myapp.example.com', to: `hello@${answers.domain}` },
     ]
 
@@ -254,6 +247,40 @@ async function main() {
     process.exit(1)
   }
 
+  // Select package manager
+  const { packageManager } = await prompts({
+    type: 'select',
+    name: 'packageManager',
+    message: 'Package manager',
+    choices: [
+      { title: 'npm', value: 'npm' },
+      { title: 'yarn', value: 'yarn' },
+      { title: 'pnpm', value: 'pnpm' },
+      { title: 'bun', value: 'bun' },
+    ],
+  })
+
+  if (!packageManager) {
+    console.log(pc.red('Cancelled'))
+    process.exit(1)
+  }
+
+  // Ask about API for web template
+  let includeApi = true
+  if (templateKey === 'web') {
+    const response = await prompts({
+      type: 'confirm',
+      name: 'includeApi',
+      message: 'Include API server? (Hono on Cloudflare Workers)',
+      initial: true,
+    })
+    if (response.includeApi === undefined) {
+      console.log(pc.red('Cancelled'))
+      process.exit(1)
+    }
+    includeApi = response.includeApi
+  }
+
   // Clone the template
   console.log()
   console.log(pc.cyan('Cloning template...'))
@@ -286,6 +313,12 @@ async function main() {
     throw error
   }
 
+  // Remove packageManager field so users can use any package manager
+  const packageJsonPath = path.join(projectDir, 'package.json')
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
+  delete packageJson.packageManager
+  fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n', 'utf-8')
+
   // Apply transformations
   console.log()
   console.log(pc.cyan('Customizing project...'))
@@ -310,9 +343,9 @@ async function main() {
   console.log()
   console.log(pc.cyan('Installing dependencies...'))
   try {
-    execSync('yarn install', { cwd: projectDir, stdio: 'inherit' })
+    execSync(`${packageManager} install`, { cwd: projectDir, stdio: 'inherit' })
   } catch {
-    console.log(pc.yellow('  Could not install dependencies. Run yarn install manually.'))
+    console.log(pc.yellow(`  Could not install dependencies. Run ${packageManager} install manually.`))
   }
 
   // Done!
@@ -322,13 +355,17 @@ async function main() {
   console.log('Next steps:')
   console.log(`  ${pc.cyan('cd')} ${projectName}`)
 
+  const runCmd = packageManager === 'npm' ? 'npm run' : packageManager
+
   if (templateKey === 'desktop') {
-    console.log(`  ${pc.cyan('yarn setup:polar')} - Configure Polar.sh license`)
-    console.log(`  ${pc.cyan('yarn tauri dev')} - Start development`)
+    console.log(`  ${pc.cyan(`${runCmd} setup:polar`)} - Configure Polar.sh license`)
+    console.log(`  ${pc.cyan(`${runCmd} tauri dev`)} - Start development`)
   } else if (templateKey === 'web') {
-    console.log(`  ${pc.cyan('yarn setup:cloudflare')} - Create D1 database`)
-    console.log(`  ${pc.cyan('yarn setup:polar')} - Configure Polar.sh`)
-    console.log(`  ${pc.cyan('yarn dev')} - Start development`)
+    if (includeApi) {
+      console.log(`  ${pc.cyan(`${runCmd} setup:cloudflare`)} - Create D1 database`)
+      console.log(`  ${pc.cyan(`${runCmd} setup:polar`)} - Configure Polar.sh`)
+    }
+    console.log(`  ${pc.cyan(`${runCmd} dev`)} - Start development`)
   }
 
   console.log()
