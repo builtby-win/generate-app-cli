@@ -111,10 +111,10 @@ const desktopTemplate: Template = {
   },
 }
 
-// Web template (Astro marketing)
+// Web template (Astro marketing/web app)
 const webTemplate: Template = {
-  name: 'Marketing Website',
-  description: 'Astro + Cloudflare Workers + Polar.sh marketing site',
+  name: 'Web App',
+  description: 'Astro + Cloudflare + tRPC + better-auth full-stack template',
   repo: 'builtby-win/web',
   prompts: [
     {
@@ -150,15 +150,12 @@ const webTemplate: Template = {
     const files = [
       'package.json',
       'astro.config.mjs',
+      'wrangler.jsonc',
       'config/site.config.ts',
-      'api/wrangler.jsonc',
-      'api/src/index.ts',
-      'api/src/lib/auth.ts',
-      'api/src/lib/email.ts',
-      'api/drizzle/schema.ts',
-      'src/layouts/BaseLayout.astro',
-      'src/components/layout/Header.astro',
-      'src/components/layout/Footer.astro',
+      'src/lib/auth.ts',
+      'src/lib/db.ts',
+      'src/lib/schema.ts',
+      'src/layouts/base-layout.astro',
       '.env.example',
       'README.md',
     ]
@@ -173,9 +170,7 @@ const webTemplate: Template = {
       { from: 'My App', to: answers.productName },
       { from: 'My App Description', to: answers.description },
       { from: 'myapp.example.com', to: answers.domain },
-      { from: 'api.myapp.example.com', to: `api.${answers.domain}` },
       { from: 'https://myapp.example.com', to: `https://${answers.domain}` },
-      { from: 'https://api.myapp.example.com', to: `https://api.${answers.domain}` },
       { from: 'hello@myapp.example.com', to: `hello@${answers.domain}` },
     ]
 
@@ -265,22 +260,6 @@ async function main() {
     process.exit(1)
   }
 
-  // Ask about API for web template
-  let includeApi = true
-  if (templateKey === 'web') {
-    const response = await prompts({
-      type: 'confirm',
-      name: 'includeApi',
-      message: 'Include API server? (Hono on Cloudflare Workers)',
-      initial: true,
-    })
-    if (response.includeApi === undefined) {
-      console.log(pc.red('Cancelled'))
-      process.exit(1)
-    }
-    includeApi = response.includeApi
-  }
-
   // Clone the template
   console.log()
   console.log(pc.cyan('Cloning template...'))
@@ -361,10 +340,7 @@ async function main() {
     console.log(`  ${pc.cyan(`${runCmd} setup:polar`)} - Configure Polar.sh license`)
     console.log(`  ${pc.cyan(`${runCmd} tauri dev`)} - Start development`)
   } else if (templateKey === 'web') {
-    if (includeApi) {
-      console.log(`  ${pc.cyan(`${runCmd} setup:cloudflare`)} - Create D1 database`)
-      console.log(`  ${pc.cyan(`${runCmd} setup:polar`)} - Configure Polar.sh`)
-    }
+    console.log(`  ${pc.cyan(`${runCmd} setup:deploy`)} - Run deployment setup wizard`)
     console.log(`  ${pc.cyan(`${runCmd} dev`)} - Start development`)
   }
 
