@@ -322,7 +322,6 @@ async function main() {
     const emitter = tiged(template.repo, {
       disableCache: true,
       mode: 'git',
-      ssh: false, // Use HTTPS instead of SSH
     })
 
     emitter.on('info', (info) => {
