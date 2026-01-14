@@ -57,6 +57,15 @@ function replaceInFile(filePath: string, replacements: Array<{ from: string; to:
   }
 }
 
+function canUseSsh(): boolean {
+  try {
+    execSync('ssh -o BatchMode=yes -T git@github.com', { stdio: 'ignore', timeout: 5000 })
+    return false
+  } catch (error: any) {
+    return error.status === 1
+  }
+}
+
 // Desktop template (Tauri)
 const desktopTemplate: Template = {
   name: 'Desktop App',
@@ -318,37 +327,61 @@ async function main() {
   console.log()
   console.log(pc.cyan('Cloning template...'))
 
-  try {
-    // Convert repo shorthand to HTTPS URL for better compatibility with gh auth
-    const repoUrl = template.repo.includes('/')
-      ? `https://github.com/${template.repo}`
-      : template.repo
+  const preferSsh = canUseSsh()
+  const protocols = preferSsh ? ['ssh', 'https'] : ['https', 'ssh']
+  let lastError: any
+  let cloned = false
 
-    const emitter = tiged(repoUrl, {
-      disableCache: true,
-      mode: 'git',
-    })
-
-    emitter.on('info', (info) => {
-      if (info.message) {
-        console.log(`  ${pc.dim(info.message)}`)
+  for (const protocol of protocols) {
+    try {
+      // Clean up from previous attempt if needed
+      if (fs.existsSync(projectDir)) {
+        fs.rmSync(projectDir, { recursive: true, force: true })
       }
-    })
 
-    await emitter.clone(projectDir)
-  } catch (error: any) {
-    if (error.message?.includes('could not find commit')) {
+      const repoUrl = template.repo.includes('/')
+        ? (protocol === 'ssh' ? `git@github.com:${template.repo}` : `https://github.com/${template.repo}`)
+        : template.repo
+
+      if (protocols.length > 1 && protocol === protocols[1]) {
+        console.log(pc.yellow(`  Retrying with ${protocol.toUpperCase()}...`))
+      }
+
+      const emitter = tiged(repoUrl, {
+        disableCache: true,
+        mode: 'git',
+      })
+
+      emitter.on('info', (info) => {
+        if (info.message) {
+          console.log(`  ${pc.dim(info.message)}`)
+        }
+      })
+
+      await emitter.clone(projectDir)
+      cloned = true
+      break
+    } catch (error: any) {
+      lastError = error
+      // Continue to next protocol
+    }
+  }
+
+  if (!cloned) {
+    if (lastError?.message?.includes('could not find commit')) {
       console.log()
       console.log(pc.red('Error: Could not access the template repository.'))
       console.log()
       console.log('This is a private template. To use it, you need to:')
       console.log('  1. Purchase access at https://polar.sh/builtby-win')
       console.log('  2. Accept the GitHub repository invitation')
-      console.log('  3. Make sure you are authenticated with GitHub (run: gh auth login)')
+      console.log('  3. Make sure you are authenticated with GitHub:')
+      console.log('     - HTTPS: run `gh auth login`')
+      console.log('     - SSH: ensure your key is added to GitHub')
       console.log()
       process.exit(1)
     }
-    throw error
+    throw lastError
   }
 
   // Remove packageManager field so users can use any package manager
