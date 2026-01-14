@@ -319,7 +319,12 @@ async function main() {
   console.log(pc.cyan('Cloning template...'))
 
   try {
-    const emitter = tiged(template.repo, {
+    // Convert repo shorthand to HTTPS URL for better compatibility with gh auth
+    const repoUrl = template.repo.includes('/')
+      ? `https://github.com/${template.repo}`
+      : template.repo
+
+    const emitter = tiged(repoUrl, {
       disableCache: true,
       mode: 'git',
     })
