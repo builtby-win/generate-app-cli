@@ -1,6 +1,6 @@
 {
   "name": "@builtby.win/cli",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "description": "Generate apps from builtby.win templates",
   "type": "module",
   "bin": {

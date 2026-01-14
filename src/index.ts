@@ -145,6 +145,12 @@ const webTemplate: Template = {
       message: 'Domain name (e.g., "example.com")',
       validate: (v) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(v) || 'Must be a valid domain',
     },
+    {
+      type: 'confirm',
+      name: 'needsApiRoutes',
+      message: 'Do you need API routes (authentication, database, tRPC)?',
+      initial: true,
+    },
   ],
   transform: (projectDir, answers) => {
     const files = [
@@ -167,6 +173,7 @@ const webTemplate: Template = {
       { from: 'my-app', to: kebab },
       { from: 'my_app', to: snake },
       { from: 'MY_APP_DB', to: `${snake.toUpperCase()}_DB` },
+      { from: 'ZeroStack', to: answers.productName },
       { from: 'My App', to: answers.productName },
       { from: 'My App Description', to: answers.description },
       { from: 'myapp.example.com', to: answers.domain },
@@ -176,6 +183,53 @@ const webTemplate: Template = {
 
     for (const file of files) {
       replaceInFile(path.join(projectDir, file), replacements)
+    }
+
+    // Handle static mode (no API routes)
+    if (!answers.needsApiRoutes) {
+      console.log(`  ${pc.cyan('Configuring static mode...')}`)
+
+      // Helper to safely rename/move files
+      const safeRename = (from: string, to: string) => {
+        const fromPath = path.join(projectDir, from)
+        const toPath = path.join(projectDir, to)
+        if (fs.existsSync(fromPath)) {
+          // Ensure target directory exists
+          fs.mkdirSync(path.dirname(toPath), { recursive: true })
+          fs.renameSync(fromPath, toPath)
+          return true
+        }
+        return false
+      }
+
+      // 1. Swap astro configs (server → backup, static → active)
+      safeRename('astro.config.mjs', 'astro.config.server.mjs')
+      safeRename('astro.config.static.mjs', 'astro.config.mjs')
+      console.log(`  ${pc.green('✓')} astro.config.mjs (static mode)`)
+
+      // 2. Swap wrangler configs
+      safeRename('wrangler.jsonc', 'wrangler.server.jsonc')
+      safeRename('wrangler.static.jsonc', 'wrangler.jsonc')
+      console.log(`  ${pc.green('✓')} wrangler.jsonc (static mode)`)
+
+      // 3. Move SSR-only pages to _server-template
+      safeRename('src/pages/api', '_server-template/pages/api')
+      safeRename('src/pages/dev', '_server-template/pages/dev')
+      safeRename('src/pages/blog/[slug].astro', '_server-template/pages/blog/[slug].astro')
+      console.log(`  ${pc.green('✓')} Moved API routes to _server-template/`)
+
+      // 4. Move server-only libraries
+      safeRename('src/lib/auth.ts', '_server-template/lib/auth.ts')
+      safeRename('src/lib/auth-client.ts', '_server-template/lib/auth-client.ts')
+      safeRename('src/lib/db.ts', '_server-template/lib/db.ts')
+      safeRename('src/lib/schema.ts', '_server-template/lib/schema.ts')
+      safeRename('src/lib/email.ts', '_server-template/lib/email.ts')
+      safeRename('src/trpc', '_server-template/trpc')
+      console.log(`  ${pc.green('✓')} Moved server libraries to _server-template/`)
+
+      // 5. Move drizzle config (not needed for static)
+      safeRename('drizzle.config.ts', '_server-template/drizzle.config.ts')
+      safeRename('drizzle', '_server-template/drizzle')
     }
   },
 }
@@ -268,6 +322,7 @@ async function main() {
     const emitter = tiged(template.repo, {
       disableCache: true,
       mode: 'git',
+      ssh: false, // Use HTTPS instead of SSH
     })
 
     emitter.on('info', (info) => {
@@ -334,14 +389,19 @@ async function main() {
   console.log('Next steps:')
   console.log(`  ${pc.cyan('cd')} ${projectName}`)
 
-  const runCmd = packageManager === 'npm' ? 'npm run' : packageManager
+  const runCmd = (packageManager === 'npm' || packageManager === 'pnpm') ? `${packageManager} run` : packageManager
 
   if (templateKey === 'desktop') {
     console.log(`  ${pc.cyan(`${runCmd} setup:polar`)} - Configure Polar.sh license`)
     console.log(`  ${pc.cyan(`${runCmd} tauri dev`)} - Start development`)
   } else if (templateKey === 'web') {
-    console.log(`  ${pc.cyan(`${runCmd} setup:deploy`)} - Run deployment setup wizard`)
-    console.log(`  ${pc.cyan(`${runCmd} dev`)} - Start development`)
+    if (answers.needsApiRoutes) {
+      console.log(`  ${pc.cyan(`${runCmd} setup`)} - Set up Cloudflare D1, auth, and more`)
+      console.log(`  ${pc.cyan(`${runCmd} dev`)} - Start development`)
+    } else {
+      console.log(`  ${pc.cyan(`${runCmd} dev`)} - Start development`)
+      console.log(`  ${pc.dim('Run')} ${pc.cyan(`${runCmd} setup`)} ${pc.dim('later to enable API routes')}`)
+    }
   }
 
   console.log()
