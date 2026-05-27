@@ -42,7 +42,7 @@ A full-stack web app template with:
 
 These are **premium templates**. To use them:
 
-1. Purchase access at [polar.sh/builtby-win](https://polar.sh/checkout/polar_c_fn71EPc0WhBlx36diBJW0kQ89g1Txm4emzAPa0SjLwk)
+1. Purchase access at [buy.polar.sh](https://buy.polar.sh/polar_cl_roG7nfaMGE2RfMg9LKoPFZCzrz6XGuDxYlhag1f56kM)
 2. Accept the GitHub repository invitation you receive
 3. Make sure you're authenticated with GitHub:
    ```bash

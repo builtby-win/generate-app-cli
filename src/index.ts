@@ -3,9 +3,11 @@
 import { execSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import prompts from 'prompts'
 import pc from 'picocolors'
+import prompts from 'prompts'
 import tiged from 'tiged'
+
+const PURCHASE_URL = 'https://buy.polar.sh/polar_cl_roG7nfaMGE2RfMg9LKoPFZCzrz6XGuDxYlhag1f56kM'
 
 // Template definitions
 interface Template {
@@ -57,12 +59,92 @@ function replaceInFile(filePath: string, replacements: Array<{ from: string; to:
   }
 }
 
+function escapeSingleQuotes(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+}
+
+function getStringProperty(value: unknown, key: string): string | undefined {
+  if (typeof value !== 'object' || value === null) {
+    return undefined
+  }
+
+  const property = (value as Record<string, unknown>)[key]
+  return typeof property === 'string' ? property : undefined
+}
+
+function getNumberProperty(value: unknown, key: string): number | undefined {
+  if (typeof value !== 'object' || value === null) {
+    return undefined
+  }
+
+  const property = (value as Record<string, unknown>)[key]
+  return typeof property === 'number' ? property : undefined
+}
+
+function getErrorText(error: unknown): string {
+  const parts = [
+    error instanceof Error ? error.message : undefined,
+    getStringProperty(error, 'message'),
+    getStringProperty(error, 'shortMessage'),
+    getStringProperty(error, 'stderr'),
+    getStringProperty(error, 'stdout'),
+  ]
+
+  return parts.filter((part): part is string => Boolean(part)).join('\n')
+}
+
+function isTemplateAccessError(error: unknown): boolean {
+  const text = getErrorText(error).toLowerCase()
+
+  return [
+    'could not find commit',
+    'repository not found',
+    'could not read from remote repository',
+    'authentication failed',
+    'permission denied',
+    'could not read username',
+  ].some((message) => text.includes(message))
+}
+
+function updateWebSiteConfig(
+  projectDir: string,
+  updates: { productName: string; description: string; domain: string },
+): void {
+  const configPath = path.join(projectDir, 'config/site.config.ts')
+  if (!fs.existsSync(configPath)) {
+    return
+  }
+
+  let content = fs.readFileSync(configPath, 'utf-8')
+
+  const setProp = (key: string, value: string) => {
+    const escaped = escapeSingleQuotes(value)
+    const regex = new RegExp(`${key}:\\s*['"][^'"]*['"]`)
+    content = content.replace(regex, `${key}: '${escaped}'`)
+  }
+
+  setProp('name', updates.productName)
+  setProp('description', updates.description)
+  setProp('url', `https://${updates.domain}`)
+  setProp('twitter', '')
+  setProp('github', '')
+  setProp('databaseId', '')
+
+  content = content.replace(
+    /href:\s*'https:\/\/builtby\.win\/ston'/,
+    `href: 'https://${updates.domain}/about'`,
+  )
+
+  fs.writeFileSync(configPath, content, 'utf-8')
+  console.log(`  ${pc.green('✓')} config/site.config.ts`)
+}
+
 function canUseSsh(): boolean {
   try {
     execSync('ssh -o BatchMode=yes -T git@github.com', { stdio: 'ignore', timeout: 5000 })
     return false
-  } catch (error: any) {
-    return error.status === 1
+  } catch (error) {
+    return getNumberProperty(error, 'status') === 1
   }
 }
 
@@ -76,7 +158,8 @@ const desktopTemplate: Template = {
       type: 'text',
       name: 'appName',
       message: 'App name (e.g., "focus-hook")',
-      validate: (v) => /^[a-zA-Z0-9-_\s]+$/.test(v) || 'Only letters, numbers, hyphens, underscores, and spaces',
+      validate: (v) =>
+        /^[a-zA-Z0-9-_\s]+$/.test(v) || 'Only letters, numbers, hyphens, underscores, and spaces',
     },
     {
       type: 'text',
@@ -88,8 +171,10 @@ const desktopTemplate: Template = {
       type: 'text',
       name: 'bundleIdentifier',
       message: 'Bundle identifier (e.g., com.example.myapp)',
-      initial: (_, values) => `com.example.${toKebabCase(values.appName || 'app').replace(/-/g, '')}`,
-      validate: (v) => /^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$/.test(v) || 'Must be reverse DNS format',
+      initial: (_, values) =>
+        `com.example.${toKebabCase(values.appName || 'app').replace(/-/g, '')}`,
+      validate: (v) =>
+        /^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$/.test(v) || 'Must be reverse DNS format',
     },
   ],
   transform: (projectDir, answers) => {
@@ -130,7 +215,8 @@ const webTemplate: Template = {
       type: 'text',
       name: 'appName',
       message: 'App name (e.g., "my-awesome-app")',
-      validate: (v) => /^[a-zA-Z0-9-_\s]+$/.test(v) || 'Only letters, numbers, hyphens, underscores, and spaces',
+      validate: (v) =>
+        /^[a-zA-Z0-9-_\s]+$/.test(v) || 'Only letters, numbers, hyphens, underscores, and spaces',
     },
     {
       type: 'text',
@@ -181,18 +267,23 @@ const webTemplate: Template = {
     const replacements = [
       { from: 'my-app', to: kebab },
       { from: 'my_app', to: snake },
-      { from: 'MY_APP_DB', to: `${snake.toUpperCase()}_DB` },
       { from: 'ZeroStack', to: answers.productName },
       { from: 'My App', to: answers.productName },
-      { from: 'My App Description', to: answers.description },
-      { from: 'myapp.example.com', to: answers.domain },
-      { from: 'https://myapp.example.com', to: `https://${answers.domain}` },
-      { from: 'hello@myapp.example.com', to: `hello@${answers.domain}` },
+      { from: 'https://builtby.win', to: `https://${answers.domain}` },
     ]
 
     for (const file of files) {
       replaceInFile(path.join(projectDir, file), replacements)
     }
+
+    updateWebSiteConfig(projectDir, {
+      productName: answers.productName,
+      description: answers.description,
+      domain: answers.domain,
+    })
+
+    // Also update wrangler.static.jsonc for static mode
+    replaceInFile(path.join(projectDir, 'wrangler.static.jsonc'), [{ from: 'my-app', to: kebab }])
 
     // Handle static mode (no API routes)
     if (!answers.needsApiRoutes) {
@@ -329,7 +420,7 @@ async function main() {
 
   const preferSsh = canUseSsh()
   const protocols = preferSsh ? ['ssh', 'https'] : ['https', 'ssh']
-  let lastError: any
+  let lastError: unknown
   let cloned = false
 
   for (const protocol of protocols) {
@@ -340,7 +431,9 @@ async function main() {
       }
 
       const repoUrl = template.repo.includes('/')
-        ? (protocol === 'ssh' ? `git@github.com:${template.repo}` : `https://github.com/${template.repo}`)
+        ? protocol === 'ssh'
+          ? `git@github.com:${template.repo}`
+          : `https://github.com/${template.repo}`
         : template.repo
 
       if (protocols.length > 1 && protocol === protocols[1]) {
@@ -361,33 +454,43 @@ async function main() {
       await emitter.clone(projectDir)
       cloned = true
       break
-    } catch (error: any) {
+    } catch (error) {
       lastError = error
       // Continue to next protocol
     }
   }
 
   if (!cloned) {
-    if (lastError?.message?.includes('could not find commit')) {
+    if (isTemplateAccessError(lastError)) {
       console.log()
       console.log(pc.red('Error: Could not access the template repository.'))
       console.log()
       console.log('This is a private template. To use it, you need to:')
-      console.log('  1. Purchase access at https://polar.sh/builtby-win')
+      console.log(`  1. Purchase access at ${PURCHASE_URL}`)
       console.log('  2. Accept the GitHub repository invitation')
       console.log('  3. Make sure you are authenticated with GitHub:')
       console.log('     - HTTPS: run `gh auth login`')
       console.log('     - SSH: ensure your key is added to GitHub')
+      console.log('  4. Restart this process after access is granted')
       console.log()
       process.exit(1)
     }
     throw lastError
   }
 
-  // Remove packageManager field so users can use any package manager
+  // Remove packageManager field and fix Cloudflare config
   const packageJsonPath = path.join(projectDir, 'package.json')
   const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
   delete packageJson.packageManager
+  packageJson.name = toKebabCase(answers.appName)
+
+  // Fix deploy script - use wrangler deploy instead of cloudflare pages with project name
+  if (templateKey === 'web') {
+    const kebab = toKebabCase(answers.appName)
+    packageJson.scripts.deploy = 'astro build && wrangler deploy'
+    packageJson.scripts.preview = 'wrangler dev --local'
+  }
+
   fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n', 'utf-8')
 
   // Apply transformations
@@ -410,13 +513,22 @@ async function main() {
     }
   }
 
+  // Create .assetsignore for Cloudflare Workers deployment
+  if (templateKey === 'web') {
+    const assetsIgnorePath = path.join(projectDir, '.assetsignore')
+    fs.writeFileSync(assetsIgnorePath, '_worker.js\n_redirects\n_headers\n', 'utf-8')
+    console.log(`  ${pc.green('✓')} .assetsignore`)
+  }
+
   // Install dependencies
   console.log()
   console.log(pc.cyan('Installing dependencies...'))
   try {
     execSync(`${packageManager} install`, { cwd: projectDir, stdio: 'inherit' })
   } catch {
-    console.log(pc.yellow(`  Could not install dependencies. Run ${packageManager} install manually.`))
+    console.log(
+      pc.yellow(`  Could not install dependencies. Run ${packageManager} install manually.`),
+    )
   }
 
   // Done!
@@ -426,7 +538,8 @@ async function main() {
   console.log('Next steps:')
   console.log(`  ${pc.cyan('cd')} ${projectName}`)
 
-  const runCmd = (packageManager === 'npm' || packageManager === 'pnpm') ? `${packageManager} run` : packageManager
+  const runCmd =
+    packageManager === 'npm' || packageManager === 'pnpm' ? `${packageManager} run` : packageManager
 
   if (templateKey === 'desktop') {
     console.log(`  ${pc.cyan(`${runCmd} setup:polar`)} - Configure Polar.sh license`)
@@ -437,7 +550,9 @@ async function main() {
       console.log(`  ${pc.cyan(`${runCmd} dev`)} - Start development`)
     } else {
       console.log(`  ${pc.cyan(`${runCmd} dev`)} - Start development`)
-      console.log(`  ${pc.dim('Run')} ${pc.cyan(`${runCmd} setup`)} ${pc.dim('later to enable API routes')}`)
+      console.log(
+        `  ${pc.dim('Run')} ${pc.cyan(`${runCmd} setup`)} ${pc.dim('later to enable API routes')}`,
+      )
     }
   }
 
