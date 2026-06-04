@@ -7,7 +7,8 @@ import pc from 'picocolors'
 import prompts from 'prompts'
 import tiged from 'tiged'
 
-const PURCHASE_URL = 'https://buy.polar.sh/polar_cl_roG7nfaMGE2RfMg9LKoPFZCzrz6XGuDxYlhag1f56kM'
+const ZEROSTACK_URL = 'https://zerostack.builtby.win'
+const CHECKOUT_URL = 'https://buy.polar.sh/polar_cl_roG7nfaMGE2RfMg9LKoPFZCzrz6XGuDxYlhag1f56kM'
 
 // Template definitions
 interface Template {
@@ -134,6 +135,68 @@ function isTemplateAccessError(error: unknown): boolean {
   ].some((message) => text.includes(message))
 }
 
+function openUrl(url: string): boolean {
+  const command =
+    process.platform === 'darwin'
+      ? `open "${url}"`
+      : process.platform === 'win32'
+        ? `start "" "${url}"`
+        : `xdg-open "${url}"`
+
+  try {
+    execSync(command, { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function ensurePurchaseAccess(): Promise<void> {
+  console.log()
+  console.log(pc.bold('Template access'))
+  console.log(`Purchase checkout: ${pc.cyan(CHECKOUT_URL)}`)
+
+  const { accessStatus } = await prompts({
+    type: 'select',
+    name: 'accessStatus',
+    message: 'Do you already have template access?',
+    choices: [
+      { title: 'Yes, I already purchased and accepted the GitHub invite', value: 'ready' },
+      { title: 'No, purchase access now via Polar checkout', value: 'purchase' },
+      { title: 'Cancel', value: 'cancel' },
+    ],
+  })
+
+  if (!accessStatus || accessStatus === 'cancel') {
+    console.log(pc.red('Cancelled'))
+    process.exit(1)
+  }
+
+  if (accessStatus === 'ready') {
+    return
+  }
+
+  console.log()
+  console.log(`Opening Polar checkout: ${pc.cyan(CHECKOUT_URL)}`)
+  if (!openUrl(CHECKOUT_URL)) {
+    console.log(pc.yellow('Could not open your browser automatically. Copy/paste the URL above.'))
+  }
+  console.log('After checkout, accept the GitHub repository invitation from Polar/GitHub.')
+
+  const { completedPurchase } = await prompts({
+    type: 'confirm',
+    name: 'completedPurchase',
+    message: 'Have you completed checkout and accepted the GitHub invite?',
+    initial: true,
+  })
+
+  if (!completedPurchase) {
+    console.log()
+    console.log(`Come back after purchasing access: ${pc.cyan(CHECKOUT_URL)}`)
+    process.exit(1)
+  }
+}
+
 function updateWebSiteConfig(
   projectDir: string,
   updates: { productName: string; description: string; domain: string },
@@ -176,10 +239,86 @@ function canUseSsh(): boolean {
   }
 }
 
+function hasGhCli(): boolean {
+  try {
+    execSync('gh --version', { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function isGhAuthenticated(): boolean {
+  try {
+    execSync('gh auth status', { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function printGhInstallInstructions(): void {
+  console.log()
+  console.log(pc.red('GitHub CLI is required to access the private templates.'))
+  console.log()
+  console.log('Install it, then run this command again:')
+  console.log(`  ${pc.cyan('macOS:')}   brew install gh`)
+  console.log(`  ${pc.cyan('Windows:')} winget install --id GitHub.cli`)
+  console.log(`  ${pc.cyan('Linux:')}   https://github.com/cli/cli/blob/trunk/docs/install_linux.md`)
+  console.log()
+  console.log('After installing, authenticate with:')
+  console.log(`  ${pc.cyan('gh auth login')}`)
+  console.log()
+}
+
+function configureGhGitAuth(): void {
+  try {
+    execSync('gh auth setup-git', { stdio: 'ignore' })
+  } catch {
+    console.log(pc.yellow('  Could not configure Git to use GitHub CLI credentials.'))
+    console.log(`  If cloning fails, run ${pc.cyan('gh auth setup-git')} and try again.`)
+  }
+}
+
+function ensureGhAuthenticated(): void {
+  if (!hasGhCli()) {
+    printGhInstallInstructions()
+    process.exit(1)
+  }
+
+  if (isGhAuthenticated()) {
+    configureGhGitAuth()
+    return
+  }
+
+  console.log()
+  console.log(pc.yellow('GitHub CLI is installed, but you are not logged in.'))
+  console.log(`Starting ${pc.cyan('gh auth login')}...`)
+  console.log()
+
+  try {
+    execSync('gh auth login', { stdio: 'inherit' })
+  } catch {
+    console.log()
+    console.log(pc.red('GitHub authentication was not completed.'))
+    console.log(`Run ${pc.cyan('gh auth login')} and then try again.`)
+    process.exit(1)
+  }
+
+  if (!isGhAuthenticated()) {
+    console.log()
+    console.log(pc.red('GitHub authentication could not be verified.'))
+    console.log(`Run ${pc.cyan('gh auth status')} to diagnose, then try again.`)
+    process.exit(1)
+  }
+
+  configureGhGitAuth()
+}
+
 // Desktop template (Tauri)
 const desktopTemplate: Template = {
   name: 'Desktop App',
-  description: 'Native desktop app — users download & install on Mac, Windows, Linux',
+  description: `Native desktop app — users download & install on Mac, Windows, Linux. Purchase: ${CHECKOUT_URL}`,
   repo: 'builtby-win/desktop',
   prompts: [
     {
@@ -236,7 +375,7 @@ const desktopTemplate: Template = {
 // Web template (Astro marketing/web app)
 const webTemplate: Template = {
   name: 'Web App',
-  description: 'Website at a URL — accessible on desktop, tablet, and phone',
+  description: `Website at a URL — accessible on desktop, tablet, and phone. Learn more: ${ZEROSTACK_URL}`,
   repo: 'builtby-win/web',
   prompts: [
     {
@@ -321,6 +460,9 @@ async function main() {
   console.log()
   console.log(pc.bold(pc.cyan('  create-builtby-app')))
   console.log()
+  console.log(`${pc.dim('ZeroStack web template:')} ${pc.cyan(ZEROSTACK_URL)}`)
+  console.log(`${pc.dim('Template checkout:')} ${pc.cyan(CHECKOUT_URL)}`)
+  console.log()
 
   // Get project name from args or prompt
   let projectName = process.argv[2]
@@ -366,6 +508,8 @@ async function main() {
 
   const template = templates[templateKey]
 
+  await ensurePurchaseAccess()
+
   // Get template-specific answers
   const answers = await prompts(template.prompts)
 
@@ -391,6 +535,9 @@ async function main() {
     console.log(pc.red('Cancelled'))
     process.exit(1)
   }
+
+  // Ensure GitHub authentication is ready before cloning private templates
+  ensureGhAuthenticated()
 
   // Clone the template
   console.log()
@@ -444,12 +591,12 @@ async function main() {
       console.log(pc.red('Error: Could not access the template repository.'))
       console.log()
       console.log('This is a private template. To use it, you need to:')
-      console.log(`  1. Purchase access at ${PURCHASE_URL}`)
+      console.log(`  1. Purchase template access at ${CHECKOUT_URL}`)
+      console.log(`     Or learn about ZeroStack at ${ZEROSTACK_URL}`)
       console.log('  2. Accept the GitHub repository invitation')
-      console.log('  3. Make sure you are authenticated with GitHub:')
-      console.log('     - HTTPS: run `gh auth login`')
-      console.log('     - SSH: ensure your key is added to GitHub')
-      console.log('  4. Restart this process after access is granted')
+      console.log('  3. Install the GitHub CLI and authenticate with `gh auth login`')
+      console.log('  4. For SSH, ensure your key is added to GitHub')
+      console.log('  5. Restart this process after access is granted')
       console.log()
       process.exit(1)
     }

@@ -44,9 +44,18 @@ These are **premium templates**. To use them:
 
 1. Purchase access at [buy.polar.sh](https://buy.polar.sh/polar_cl_roG7nfaMGE2RfMg9LKoPFZCzrz6XGuDxYlhag1f56kM)
 2. Accept the GitHub repository invitation you receive
-3. Make sure you're authenticated with GitHub:
+3. Install the GitHub CLI if you do not have it:
+   ```bash
+   # macOS
+   brew install gh
+
+   # Windows
+   winget install --id GitHub.cli
+   ```
+4. Authenticate with GitHub and configure git credentials:
    ```bash
    gh auth login
+   gh auth setup-git
    ```
 
 ## License
