@@ -59,6 +59,34 @@ function replaceInFile(filePath: string, replacements: Array<{ from: string; to:
   }
 }
 
+function getRunCommand(packageManager: string): string {
+  return packageManager === 'npm' ? 'npm run' : packageManager
+}
+
+function rewritePackageManagerCommands(projectDir: string, packageManager: string): void {
+  const runCommand = getRunCommand(packageManager)
+  const replacements = [
+    { from: 'pnpm dev', to: `${runCommand} dev` },
+    { from: 'pnpm setup', to: `${runCommand} setup` },
+    { from: 'pnpm setup:complete', to: `${runCommand} setup:complete` },
+    { from: 'pnpm setup:cloudflare', to: `${runCommand} setup:cloudflare` },
+    { from: 'pnpm setup:polar', to: `${runCommand} setup:polar` },
+    { from: 'pnpm setup:deploy', to: `${runCommand} setup:deploy` },
+  ]
+  const files = [
+    'README.md',
+    'CUSTOMIZATION.md',
+    '.env.example',
+    'src/lib/setup-status.ts',
+    'src/components/islands/setup-widget.tsx',
+    'src/content/docs/docs/setup.mdx',
+  ]
+
+  for (const file of files) {
+    replaceInFile(path.join(projectDir, file), replacements)
+  }
+}
+
 function escapeSingleQuotes(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
 }
@@ -110,7 +138,7 @@ function updateWebSiteConfig(
   projectDir: string,
   updates: { productName: string; description: string; domain: string },
 ): void {
-  const configPath = path.join(projectDir, 'config/site.config.ts')
+  const configPath = path.join(projectDir, 'config/site-config.ts')
   if (!fs.existsSync(configPath)) {
     return
   }
@@ -136,7 +164,7 @@ function updateWebSiteConfig(
   )
 
   fs.writeFileSync(configPath, content, 'utf-8')
-  console.log(`  ${pc.green('✓')} config/site.config.ts`)
+  console.log(`  ${pc.green('✓')} config/site-config.ts`)
 }
 
 function canUseSsh(): boolean {
@@ -151,7 +179,7 @@ function canUseSsh(): boolean {
 // Desktop template (Tauri)
 const desktopTemplate: Template = {
   name: 'Desktop App',
-  description: 'Tauri + React + TypeScript desktop application',
+  description: 'Native desktop app — users download & install on Mac, Windows, Linux',
   repo: 'builtby-win/desktop',
   prompts: [
     {
@@ -208,7 +236,7 @@ const desktopTemplate: Template = {
 // Web template (Astro marketing/web app)
 const webTemplate: Template = {
   name: 'Web App',
-  description: 'Astro + Cloudflare + tRPC + better-auth full-stack template',
+  description: 'Website at a URL — accessible on desktop, tablet, and phone',
   repo: 'builtby-win/web',
   prompts: [
     {
@@ -240,25 +268,23 @@ const webTemplate: Template = {
       message: 'Domain name (e.g., "example.com")',
       validate: (v) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(v) || 'Must be a valid domain',
     },
-    {
-      type: 'confirm',
-      name: 'needsApiRoutes',
-      message: 'Do you need API routes (authentication, database, tRPC)?',
-      initial: true,
-    },
   ],
   transform: (projectDir, answers) => {
     const files = [
       'package.json',
       'astro.config.mjs',
       'wrangler.jsonc',
-      'config/site.config.ts',
+      'config/site-config.ts',
       'src/lib/auth.ts',
       'src/lib/db.ts',
       'src/lib/schema.ts',
       'src/layouts/base-layout.astro',
       '.env.example',
       'README.md',
+      'CUSTOMIZATION.md',
+      'src/content/docs/docs/index.mdx',
+      'src/content/docs/docs/quickstart.mdx',
+      'src/content/docs/docs/setup.mdx',
     ]
 
     const kebab = toKebabCase(answers.appName)
@@ -282,55 +308,7 @@ const webTemplate: Template = {
       domain: answers.domain,
     })
 
-    // Also update wrangler.static.jsonc for static mode
     replaceInFile(path.join(projectDir, 'wrangler.static.jsonc'), [{ from: 'my-app', to: kebab }])
-
-    // Handle static mode (no API routes)
-    if (!answers.needsApiRoutes) {
-      console.log(`  ${pc.cyan('Configuring static mode...')}`)
-
-      // Helper to safely rename/move files
-      const safeRename = (from: string, to: string) => {
-        const fromPath = path.join(projectDir, from)
-        const toPath = path.join(projectDir, to)
-        if (fs.existsSync(fromPath)) {
-          // Ensure target directory exists
-          fs.mkdirSync(path.dirname(toPath), { recursive: true })
-          fs.renameSync(fromPath, toPath)
-          return true
-        }
-        return false
-      }
-
-      // 1. Swap astro configs (server → backup, static → active)
-      safeRename('astro.config.mjs', 'astro.config.server.mjs')
-      safeRename('astro.config.static.mjs', 'astro.config.mjs')
-      console.log(`  ${pc.green('✓')} astro.config.mjs (static mode)`)
-
-      // 2. Swap wrangler configs
-      safeRename('wrangler.jsonc', 'wrangler.server.jsonc')
-      safeRename('wrangler.static.jsonc', 'wrangler.jsonc')
-      console.log(`  ${pc.green('✓')} wrangler.jsonc (static mode)`)
-
-      // 3. Move SSR-only pages to _server-template
-      safeRename('src/pages/api', '_server-template/pages/api')
-      safeRename('src/pages/dev', '_server-template/pages/dev')
-      safeRename('src/pages/blog/[slug].astro', '_server-template/pages/blog/[slug].astro')
-      console.log(`  ${pc.green('✓')} Moved API routes to _server-template/`)
-
-      // 4. Move server-only libraries
-      safeRename('src/lib/auth.ts', '_server-template/lib/auth.ts')
-      safeRename('src/lib/auth-client.ts', '_server-template/lib/auth-client.ts')
-      safeRename('src/lib/db.ts', '_server-template/lib/db.ts')
-      safeRename('src/lib/schema.ts', '_server-template/lib/schema.ts')
-      safeRename('src/lib/email.ts', '_server-template/lib/email.ts')
-      safeRename('src/trpc', '_server-template/trpc')
-      console.log(`  ${pc.green('✓')} Moved server libraries to _server-template/`)
-
-      // 5. Move drizzle config (not needed for static)
-      safeRename('drizzle.config.ts', '_server-template/drizzle.config.ts')
-      safeRename('drizzle', '_server-template/drizzle')
-    }
   },
 }
 
@@ -373,7 +351,7 @@ async function main() {
   const { templateKey } = await prompts({
     type: 'select',
     name: 'templateKey',
-    message: 'Which template?',
+    message: 'What kind of app are you building?',
     choices: Object.entries(templates).map(([key, t]) => ({
       title: t.name,
       description: t.description,
@@ -484,10 +462,7 @@ async function main() {
   delete packageJson.packageManager
   packageJson.name = toKebabCase(answers.appName)
 
-  // Fix deploy script - use wrangler deploy instead of cloudflare pages with project name
   if (templateKey === 'web') {
-    const kebab = toKebabCase(answers.appName)
-    packageJson.scripts.deploy = 'astro build && wrangler deploy'
     packageJson.scripts.preview = 'wrangler dev --local'
   }
 
@@ -497,6 +472,16 @@ async function main() {
   console.log()
   console.log(pc.cyan('Customizing project...'))
   template.transform(projectDir, answers)
+  rewritePackageManagerCommands(projectDir, packageManager)
+
+  if (!fs.existsSync(path.join(projectDir, '.git'))) {
+    try {
+      execSync('git init', { cwd: projectDir, stdio: 'ignore' })
+      console.log(`  ${pc.green('✓')} initialized git repository`)
+    } catch {
+      console.log(pc.yellow('  Could not initialize git. Run git init manually before your first commit.'))
+    }
+  }
 
   // Remove files that shouldn't be in generated projects
   const filesToRemove = [
@@ -538,22 +523,16 @@ async function main() {
   console.log('Next steps:')
   console.log(`  ${pc.cyan('cd')} ${projectName}`)
 
-  const runCmd =
-    packageManager === 'npm' || packageManager === 'pnpm' ? `${packageManager} run` : packageManager
+  const runCmd = getRunCommand(packageManager)
 
   if (templateKey === 'desktop') {
     console.log(`  ${pc.cyan(`${runCmd} setup:polar`)} - Configure Polar.sh license`)
     console.log(`  ${pc.cyan(`${runCmd} tauri dev`)} - Start development`)
   } else if (templateKey === 'web') {
-    if (answers.needsApiRoutes) {
-      console.log(`  ${pc.cyan(`${runCmd} setup`)} - Set up Cloudflare D1, auth, and more`)
-      console.log(`  ${pc.cyan(`${runCmd} dev`)} - Start development`)
-    } else {
-      console.log(`  ${pc.cyan(`${runCmd} dev`)} - Start development`)
-      console.log(
-        `  ${pc.dim('Run')} ${pc.cyan(`${runCmd} setup`)} ${pc.dim('later to enable API routes')}`,
-      )
-    }
+    console.log(`  ${pc.cyan(`${runCmd} setup`)} - Set up Cloudflare D1, auth, and more`)
+    console.log(`  ${pc.cyan(`${runCmd} dev`)} - Start development`)
+    console.log(`  ${pc.cyan('open http://localhost:4321/docs/setup/')} - Check setup status`)
+    console.log(`  ${pc.cyan(`${runCmd} setup:deploy`)} - Configure Cloudflare production deploy`)
   }
 
   console.log()
