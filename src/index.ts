@@ -60,8 +60,12 @@ function replaceInFile(filePath: string, replacements: Array<{ from: string; to:
   }
 }
 
-function getRunCommand(packageManager: string): string {
-  return packageManager === 'npm' ? 'npm run' : packageManager
+function getScriptCommand(packageManager: string, scriptName: string): string {
+  if (packageManager === 'npm' || packageManager === 'pnpm') {
+    return `${packageManager} run ${scriptName}`
+  }
+
+  return `${packageManager} ${scriptName}`
 }
 
 function terminalLink(label: string, url: string): string {
@@ -73,14 +77,13 @@ function terminalLink(label: string, url: string): string {
 }
 
 function rewritePackageManagerCommands(projectDir: string, packageManager: string): void {
-  const runCommand = getRunCommand(packageManager)
   const replacements = [
-    { from: 'pnpm dev', to: `${runCommand} dev` },
-    { from: 'pnpm setup', to: `${runCommand} setup` },
-    { from: 'pnpm setup:complete', to: `${runCommand} setup:complete` },
-    { from: 'pnpm setup:cloudflare', to: `${runCommand} setup:cloudflare` },
-    { from: 'pnpm setup:polar', to: `${runCommand} setup:polar` },
-    { from: 'pnpm setup:deploy', to: `${runCommand} setup:deploy` },
+    { from: 'pnpm dev', to: getScriptCommand(packageManager, 'dev') },
+    { from: 'pnpm setup', to: getScriptCommand(packageManager, 'setup') },
+    { from: 'pnpm setup:complete', to: getScriptCommand(packageManager, 'setup:complete') },
+    { from: 'pnpm setup:cloudflare', to: getScriptCommand(packageManager, 'setup:cloudflare') },
+    { from: 'pnpm setup:polar', to: getScriptCommand(packageManager, 'setup:polar') },
+    { from: 'pnpm setup:deploy', to: getScriptCommand(packageManager, 'setup:deploy') },
   ]
   const files = [
     'README.md',
@@ -686,16 +689,14 @@ async function main() {
   console.log('Next steps:')
   console.log(`  ${pc.cyan('cd')} ${projectName}`)
 
-  const runCmd = getRunCommand(packageManager)
-
   if (templateKey === 'desktop') {
-    console.log(`  ${pc.cyan(`${runCmd} setup:polar`)} - Configure Polar.sh license`)
-    console.log(`  ${pc.cyan(`${runCmd} tauri dev`)} - Start development`)
+    console.log(`  ${pc.cyan(getScriptCommand(packageManager, 'setup:polar'))} - Configure Polar.sh license`)
+    console.log(`  ${pc.cyan(getScriptCommand(packageManager, 'tauri dev'))} - Start development`)
   } else if (templateKey === 'web') {
-    console.log(`  ${pc.cyan(`${runCmd} setup`)} - Set up Cloudflare D1, auth, and more`)
-    console.log(`  ${pc.cyan(`${runCmd} dev`)} - Start development`)
+    console.log(`  ${pc.cyan(getScriptCommand(packageManager, 'setup'))} - Set up Cloudflare D1, auth, and more`)
+    console.log(`  ${pc.cyan(getScriptCommand(packageManager, 'dev'))} - Start development`)
     console.log(`  ${pc.cyan('open http://localhost:4321/docs/setup/')} - Check setup status`)
-    console.log(`  ${pc.cyan(`${runCmd} setup:deploy`)} - Configure Cloudflare production deploy`)
+    console.log(`  ${pc.cyan(getScriptCommand(packageManager, 'setup:deploy'))} - Configure Cloudflare production deploy`)
   }
 
   console.log()
