@@ -64,6 +64,14 @@ function getRunCommand(packageManager: string): string {
   return packageManager === 'npm' ? 'npm run' : packageManager
 }
 
+function terminalLink(label: string, url: string): string {
+  if (!process.stdout.isTTY || process.env.NO_COLOR || process.env.CI) {
+    return `${label}: ${url}`
+  }
+
+  return `\u001B]8;;${url}\u0007${pc.cyan(label)}\u001B]8;;\u0007`
+}
+
 function rewritePackageManagerCommands(projectDir: string, packageManager: string): void {
   const runCommand = getRunCommand(packageManager)
   const replacements = [
@@ -154,7 +162,7 @@ function openUrl(url: string): boolean {
 async function ensurePurchaseAccess(): Promise<void> {
   console.log()
   console.log(pc.bold('Template access'))
-  console.log(`Purchase checkout: ${pc.cyan(CHECKOUT_URL)}`)
+  console.log(`Purchase checkout: ${terminalLink('Open Polar checkout', CHECKOUT_URL)}`)
 
   const { accessStatus } = await prompts({
     type: 'select',
@@ -177,7 +185,7 @@ async function ensurePurchaseAccess(): Promise<void> {
   }
 
   console.log()
-  console.log(`Opening Polar checkout: ${pc.cyan(CHECKOUT_URL)}`)
+  console.log(`Opening ${terminalLink('Polar checkout', CHECKOUT_URL)}...`)
   if (!openUrl(CHECKOUT_URL)) {
     console.log(pc.yellow('Could not open your browser automatically. Copy/paste the URL above.'))
   }
@@ -192,7 +200,7 @@ async function ensurePurchaseAccess(): Promise<void> {
 
   if (!completedPurchase) {
     console.log()
-    console.log(`Come back after purchasing access: ${pc.cyan(CHECKOUT_URL)}`)
+    console.log(`Come back after purchasing access: ${terminalLink('Polar checkout', CHECKOUT_URL)}`)
     process.exit(1)
   }
 }
@@ -315,10 +323,19 @@ function ensureGhAuthenticated(): void {
   configureGhGitAuth()
 }
 
+function hasTemplateRepoAccess(repo: string): boolean {
+  try {
+    execSync(`gh repo view ${repo} --json name`, { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
 // Desktop template (Tauri)
 const desktopTemplate: Template = {
   name: 'Desktop App',
-  description: `Native desktop app — users download & install on Mac, Windows, Linux. Purchase: ${CHECKOUT_URL}`,
+  description: 'Native desktop app — users download & install on Mac, Windows, Linux',
   repo: 'builtby-win/desktop',
   prompts: [
     {
@@ -375,7 +392,7 @@ const desktopTemplate: Template = {
 // Web template (Astro marketing/web app)
 const webTemplate: Template = {
   name: 'Web App',
-  description: `Website at a URL — accessible on desktop, tablet, and phone. Learn more: ${ZEROSTACK_URL}`,
+  description: 'Website at a URL — accessible on desktop, tablet, and phone',
   repo: 'builtby-win/web',
   prompts: [
     {
@@ -460,9 +477,6 @@ async function main() {
   console.log()
   console.log(pc.bold(pc.cyan('  create-builtby-app')))
   console.log()
-  console.log(`${pc.dim('ZeroStack web template:')} ${pc.cyan(ZEROSTACK_URL)}`)
-  console.log(`${pc.dim('Template checkout:')} ${pc.cyan(CHECKOUT_URL)}`)
-  console.log()
 
   // Get project name from args or prompt
   let projectName = process.argv[2]
@@ -508,7 +522,11 @@ async function main() {
 
   const template = templates[templateKey]
 
-  await ensurePurchaseAccess()
+  // Authenticate once, then skip the purchase prompt when GitHub says this user already has repo access.
+  ensureGhAuthenticated()
+  if (!hasTemplateRepoAccess(template.repo)) {
+    await ensurePurchaseAccess()
+  }
 
   // Get template-specific answers
   const answers = await prompts(template.prompts)
@@ -522,11 +540,12 @@ async function main() {
   const { packageManager } = await prompts({
     type: 'select',
     name: 'packageManager',
-    message: 'Package manager',
+    message: 'Package manager (press Enter for recommended)',
+    initial: 0,
     choices: [
+      { title: 'pnpm (recommended)', value: 'pnpm' },
       { title: 'npm', value: 'npm' },
       { title: 'yarn', value: 'yarn' },
-      { title: 'pnpm', value: 'pnpm' },
       { title: 'bun', value: 'bun' },
     ],
   })
@@ -535,9 +554,6 @@ async function main() {
     console.log(pc.red('Cancelled'))
     process.exit(1)
   }
-
-  // Ensure GitHub authentication is ready before cloning private templates
-  ensureGhAuthenticated()
 
   // Clone the template
   console.log()
@@ -591,8 +607,8 @@ async function main() {
       console.log(pc.red('Error: Could not access the template repository.'))
       console.log()
       console.log('This is a private template. To use it, you need to:')
-      console.log(`  1. Purchase template access at ${CHECKOUT_URL}`)
-      console.log(`     Or learn about ZeroStack at ${ZEROSTACK_URL}`)
+      console.log(`  1. Purchase template access: ${terminalLink('Polar checkout', CHECKOUT_URL)}`)
+      console.log(`     Or learn about ZeroStack: ${terminalLink('ZeroStack', ZEROSTACK_URL)}`)
       console.log('  2. Accept the GitHub repository invitation')
       console.log('  3. Install the GitHub CLI and authenticate with `gh auth login`')
       console.log('  4. For SSH, ensure your key is added to GitHub')
