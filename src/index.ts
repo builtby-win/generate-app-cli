@@ -84,6 +84,7 @@ function rewritePackageManagerCommands(projectDir: string, packageManager: strin
     { from: 'pnpm setup:cloudflare', to: getScriptCommand(packageManager, 'setup:cloudflare') },
     { from: 'pnpm setup:polar', to: getScriptCommand(packageManager, 'setup:polar') },
     { from: 'pnpm setup:deploy', to: getScriptCommand(packageManager, 'setup:deploy') },
+    { from: 'pnpm deploy', to: getScriptCommand(packageManager, 'deploy') },
   ]
   const files = [
     'README.md',
