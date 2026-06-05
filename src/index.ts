@@ -698,6 +698,8 @@ async function main() {
     console.log(`  ${pc.cyan(getScriptCommand(packageManager, 'dev'))} - Start development`)
     console.log(`  ${pc.cyan('open http://localhost:4321/docs/setup/')} - Check setup status`)
     console.log(`  ${pc.cyan(getScriptCommand(packageManager, 'setup:deploy'))} - Configure Cloudflare production deploy`)
+    console.log()
+    console.log('Run setup, deploy your app, then have fun building!')
   }
 
   console.log()
