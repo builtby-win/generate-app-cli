@@ -269,6 +269,15 @@ function isGhAuthenticated(): boolean {
   }
 }
 
+function getGhUsername(): string | undefined {
+  try {
+    const out = execSync('gh api user --jq .login', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+    return out || undefined
+  } catch {
+    return undefined
+  }
+}
+
 function printGhInstallInstructions(): void {
   console.log()
   console.log(pc.red('GitHub CLI is required to access the private templates.'))
@@ -299,6 +308,8 @@ function ensureGhAuthenticated(): void {
   }
 
   if (isGhAuthenticated()) {
+    const username = getGhUsername()
+    if (username) console.log(`  ${pc.green('✓')} GitHub CLI logged in as ${pc.bold('@' + username)}`)
     configureGhGitAuth()
     return
   }
@@ -324,6 +335,8 @@ function ensureGhAuthenticated(): void {
     process.exit(1)
   }
 
+  const username = getGhUsername()
+  if (username) console.log(`  ${pc.green('✓')} GitHub CLI logged in as ${pc.bold('@' + username)}`)
   configureGhGitAuth()
 }
 
@@ -334,6 +347,33 @@ function hasTemplateRepoAccess(repo: string): boolean {
   } catch {
     return false
   }
+}
+
+function printAccessDiagnostic(failedRepo: string): void {
+  const username = getGhUsername()
+  const who = username ? `@${username}` : 'your GitHub account'
+  const inviteUrl = 'https://github.com/builtby-win/zerostack/invitations'
+  const notifUrl = 'https://github.com/notifications'
+  console.log()
+  console.log(pc.yellow(`  No access to ${pc.bold(failedRepo)} as ${pc.bold(who)}.`))
+  console.log()
+  console.log('  This is a private repository. Polar can only send a GitHub')
+  console.log('  invitation — GitHub requires you to accept it before `git clone` works.')
+  console.log('  (GitHub does not allow apps to auto-add collaborators; every private-repo')
+  console.log('  invite must be explicitly accepted for security.)')
+  console.log()
+  console.log(pc.bold('  Fix:'))
+  console.log(`    1. Check your email for a GitHub invite (from Polar/GitHub)`)
+  console.log(`    2. Or open ${terminalLink('GitHub invites', inviteUrl)} and ${terminalLink('Notifications', notifUrl)}`)
+  console.log(`    3. Click ${pc.green('Accept')} on the invitation`)
+  console.log(`    4. Confirm with: ${pc.cyan(`gh repo view ${failedRepo} --json nameWithOwner`)}`)
+  console.log()
+  console.log('  Common gotchas:')
+  console.log(`    • Checkout email ≠ GitHub email → invite went to the Polar email, not your GitHub account.`)
+  console.log(`      Re-purchase with your GitHub email, or ask support to re-send the invite.`)
+  console.log(`    • Still not showing? Run ${pc.cyan('gh auth status')} and ${pc.cyan('gh auth login')} to switch accounts.`)
+  console.log(`    • After accepting, re-run this CLI.`)
+  console.log()
 }
 
 // Desktop template (Tauri)
@@ -526,10 +566,36 @@ async function main() {
 
   const template = templates[templateKey]
 
-  // Authenticate once, then skip the purchase prompt when GitHub says this user already has repo access.
+  // Authenticate early — fail fast with a clear diagnostic before any other prompts.
   ensureGhAuthenticated()
-  if (!hasTemplateRepoAccess(template.repo)) {
+  console.log()
+  console.log(pc.bold('GitHub access check'))
+  let hasAccess: boolean
+  {
+    const username = getGhUsername()
+    const who = username ? `@${username}` : 'your account'
+    const ok = hasTemplateRepoAccess(template.repo)
+    if (ok) {
+      console.log(`  ${pc.green('✓')} ${pc.bold(template.repo)} — accessible as ${pc.bold(who)}`)
+      hasAccess = true
+    } else {
+      console.log(`  ${pc.red('✗')} ${pc.bold(template.repo)} — no access as ${pc.bold(who)}`)
+      hasAccess = false
+      printAccessDiagnostic(template.repo)
+    }
+  }
+  if (!hasAccess) {
     await ensurePurchaseAccess()
+    console.log()
+    console.log(pc.cyan('Re-checking GitHub access...'))
+    if (!hasTemplateRepoAccess(template.repo)) {
+      console.log(pc.red('  Still no access.'))
+      printAccessDiagnostic(template.repo)
+      console.log(pc.dim('  Tip: GitHub can take ~30s after Accept to propagate. Wait a moment and re-run.'))
+      process.exit(1)
+    }
+    const username = getGhUsername()
+    console.log(`  ${pc.green('✓')} Access confirmed${username ? ` as @${username}` : ''} — continuing.`)
   }
 
   // Get template-specific answers
@@ -608,15 +674,14 @@ async function main() {
   if (!cloned) {
     if (isTemplateAccessError(lastError)) {
       console.log()
-      console.log(pc.red('Error: Could not access the template repository.'))
-      console.log()
-      console.log('This is a private template. To use it, you need to:')
-      console.log(`  1. Purchase template access: ${terminalLink('Polar checkout', CHECKOUT_URL)}`)
-      console.log(`     Or learn about ZeroStack: ${terminalLink('ZeroStack', ZEROSTACK_URL)}`)
-      console.log('  2. Accept the GitHub repository invitation')
-      console.log('  3. Install the GitHub CLI and authenticate with `gh auth login`')
-      console.log('  4. For SSH, ensure your key is added to GitHub')
-      console.log('  5. Restart this process after access is granted')
+      console.log(pc.red('Error: Could not clone the template repository.'))
+      const errSnippet = getErrorText(lastError).split('\n').slice(0, 3).join('\n')
+      if (errSnippet) console.log(pc.dim(errSnippet))
+      printAccessDiagnostic(template.repo)
+      console.log('  Also try:')
+      console.log(`    ${pc.cyan('gh auth setup-git')}   — re-wire git to use GitHub CLI credentials`)
+      console.log(`    ${pc.cyan('gh auth status')}      — confirm token has 'repo' scope`)
+      console.log(`    ${pc.cyan(`gh repo view ${template.repo} --json nameWithOwner`)} — must succeed before clone can`)
       console.log()
       process.exit(1)
     }
