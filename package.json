@@ -12,7 +12,12 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
     "dev": "tsx src/index.ts",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "release": "node scripts/publish.mjs patch",
+    "release:patch": "node scripts/publish.mjs patch",
+    "release:minor": "node scripts/publish.mjs minor",
+    "release:major": "node scripts/publish.mjs major",
+    "release:dry": "node scripts/publish.mjs patch --dry-run"
   },
   "dependencies": {
     "prompts": "^2.4.2",
